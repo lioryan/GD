@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Loss Function Visualization</title>
+    <style>
+        body { 
+            margin: 0; 
+            padding: 0; 
+            font-family: Arial, sans-serif;
+            background: white;
+            overflow: hidden;
+        }
+        #controls {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        .slider-group {
+            margin-bottom: 10px;
+        }
+        input[type="range"] {
+            width: 200px;
+        }
+        #value {
+            font-weight: bold;
+            color: #333;
+        }
+        canvas {
+            width: 100vw;
+            height: 100vh;
+        }
+    </style>
+</head>
+<body>
+    <div id="controls">
+        <div class="slider-group">
+            <label>X Position: <span id="x-value">0</span></label><br>
+            <input type="range" id="x" min="-5" max="5" value="0" step="0.1">
+        </div>
+        <div class="slider-group">
+            <label>Y Position: <span id="y-value">0</span></label><br>
+            <input type="range" id="y" min="-5" max="5" value="0" step="0.1">
+        </div>
+        <div id="value">Loss Value: 0</div>
+        <p style="color: #666; font-size: 0.8em;">Drag to rotate the view</p>
+    </div>
+    <canvas id="canvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        let width = canvas.width = window.innerWidth;
+        let height = canvas.height = window.innerHeight;
+
+        let rotation = { x: 45, y: 45 };
+        let isDragging = false;
+        let lastMousePos = { x: 0, y: 0 };
+        let currentPos = { x: 0, y: 0 };
+        let path = [];
+
+        function loss(x, y) {
+            return x * x + y * y;
+        }
+
+        function project(x, y, z) {
+            const scale = Math.min(width, height) / 12;
+            const centerX = width / 2;
+            const centerY = height / 2;
+            
+            const xRot = rotation.x * Math.PI / 180;
+            const yRot = rotation.y * Math.PI / 180;
+            
+            const x1 = x;
+            const y1 = y * Math.cos(xRot) - z * Math.sin(xRot);
+            const z1 = y * Math.sin(xRot) + z * Math.cos(xRot);
+            
+            const x2 = x1 * Math.cos(yRot) + z1 * Math.sin(yRot);
+            
+            return {
+                x: x2 * scale + centerX,
+                y: y1 * scale + centerY
+            };
+        }
+
+        function getColor(height) {
+            const maxHeight = 50;
+            const normalized = Math.min(height / maxHeight, 1);
+            const h = 240 - normalized * 180; // Blue to Red
+            return `hsl(${h}, 80%, 50%)`;
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, width, height);
+            
+            // Draw surface
+            for (let x = -5; x <= 5; x += 0.2) {
+                for (let y = -5; y <= 5; y += 0.2) {
+                    const z = loss(x, y);
+                    if (z <= 50) {
+                        const proj = project(x, y, z);
+                        ctx.beginPath();
+                        ctx.arc(proj.x, proj.y, 2, 0, Math.PI * 2);
+                        ctx.fillStyle = getColor(z);
+                        ctx.fill();
+                    }
+                }
+            }
+            
+            // Draw path
+            ctx.beginPath();
+            for (let i = 0; i < path.length; i++) {
+                const proj = project(path[i].x, path[i].y, path[i].z);
+                if (i === 0) {
+                    ctx.moveTo(proj.x, proj.y);
+                } else {
+                    ctx.lineTo(proj.x, proj.y);
+                }
+            }
+            ctx.strokeStyle = 'red';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            // Draw current point
+            const z = loss(currentPos.x, currentPos.y);
+            const proj = project(currentPos.x, currentPos.y, z);
+            
+            // Vertical line
+            const baseProj = project(currentPos.x, currentPos.y, 0);
+            ctx.beginPath();
+            ctx.moveTo(proj.x, proj.y);
+            ctx.lineTo(proj.x, baseProj.y);
+            ctx.setLineDash([5, 5]);
+            ctx.strokeStyle = 'black';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+            ctx.setLineDash([]);
+            
+            // Point
+            ctx.beginPath();
+            ctx.arc(proj.x, proj.y, 6, 0, Math.PI * 2);
+            ctx.fillStyle = 'red';
+            ctx.fill();
+        }
+
+        window.addEventListener('resize', () => {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+            draw();
+        });
+
+        canvas.addEventListener('mousedown', (e) => {
+            isDragging = true;
+            lastMousePos = { x: e.clientX, y: e.clientY };
+        });
+
+        canvas.addEventListener('mousemove', (e) => {
+            if (isDragging) {
+                const deltaX = e.clientX - lastMousePos.x;
+                const deltaY = e.clientY - lastMousePos.y;
+                rotation.y += deltaX * 0.5;
+                rotation.x += deltaY * 0.5;
+                lastMousePos = { x: e.clientX, y: e.clientY };
+                draw();
+            }
+        });
+
+        canvas.addEventListener('mouseup', () => isDragging = false);
+        canvas.addEventListener('mouseleave', () => isDragging = false);
+
+        function updatePosition() {
+            currentPos = { 
+                x: parseFloat(document.getElementById('x').value), 
+                y: parseFloat(document.getElementById('y').value) 
+            };
+            const z = loss(currentPos.x, currentPos.y);
+            
+            document.getElementById('x-value').textContent = currentPos.x.toFixed(1);
+            document.getElementById('y-value').textContent = currentPos.y.toFixed(1);
+            document.getElementById('value').textContent = `Loss Value: ${z.toFixed(1)}`;
+            
+            path.push({ x: currentPos.x, y: currentPos.y, z: z });
+            if (path.length > 50) path.shift();
+            
+            draw();
+        }
+
+        document.getElementById('x').addEventListener('input', updatePosition);
+        document.getElementById('y').addEventListener('input', updatePosition);
+
+        updatePosition();
+    </script>
+</body>
+</html>
