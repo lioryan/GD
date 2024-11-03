@@ -14,10 +14,11 @@
             position: fixed;
             top: 20px;
             left: 20px;
-            background: rgba(255, 255, 255, 0.9);
+            background: rgba(255, 255, 255, 0.95);
             padding: 15px;
             border-radius: 8px;
             box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            z-index: 1000;
         }
         .slider-group {
             margin-bottom: 10px;
@@ -29,9 +30,31 @@
             font-weight: bold;
             color: #333;
         }
+        #equation {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            font-size: 1.2em;
+            z-index: 1000;
+        }
         canvas {
             width: 100vw;
             height: 100vh;
+        }
+        #instructions {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            font-size: 0.9em;
+            color: #666;
         }
     </style>
 </head>
@@ -46,8 +69,19 @@
             <input type="range" id="y" min="-5" max="5" value="0" step="0.1">
         </div>
         <div id="value">Loss Value: 0</div>
-        <p style="color: #666; font-size: 0.8em;">Drag to rotate the view</p>
     </div>
+
+    <div id="equation">
+        L(θ₁, θ₂) = θ₁² + θ₂²
+    </div>
+
+    <div id="instructions">
+        • Left-click + drag red point to move it on surface<br>
+        • Middle-click/Alt + drag to move entire graph<br>
+        • Right-click + drag to rotate view<br>
+        • Mouse wheel to zoom in/out
+    </div>
+
     <canvas id="canvas"></canvas>
 
     <script>
@@ -57,7 +91,11 @@
         let height = canvas.height = window.innerHeight;
 
         let rotation = { x: 45, y: 45 };
+        let translation = { x: 0, y: 0 };
+        let scale = 1;
         let isDragging = false;
+        let isRotating = false;
+        let isDraggingPoint = false;
         let lastMousePos = { x: 0, y: 0 };
         let currentPos = { x: 0, y: 0 };
         let path = [];
@@ -67,9 +105,10 @@
         }
 
         function project(x, y, z) {
-            const scale = Math.min(width, height) / 12;
-            const centerX = width / 2;
-            const centerY = height / 2;
+            const baseScale = Math.min(width, height) / 12;
+            const finalScale = baseScale * scale;
+            const centerX = width / 2 + translation.x;
+            const centerY = height / 2 + translation.y;
             
             const xRot = rotation.x * Math.PI / 180;
             const yRot = rotation.y * Math.PI / 180;
@@ -81,16 +120,49 @@
             const x2 = x1 * Math.cos(yRot) + z1 * Math.sin(yRot);
             
             return {
-                x: x2 * scale + centerX,
-                y: y1 * scale + centerY
+                x: x2 * finalScale + centerX,
+                y: y1 * finalScale + centerY
             };
+        }
+
+        // Inverse projection to get world coordinates from screen coordinates
+        function unproject(screenX, screenY) {
+            const baseScale = Math.min(width, height) / 12;
+            const finalScale = baseScale * scale;
+            const centerX = width / 2 + translation.x;
+            const centerY = height / 2 + translation.y;
+            
+            const xRot = rotation.x * Math.PI / 180;
+            const yRot = rotation.y * Math.PI / 180;
+
+            // Adjust for translation and scale
+            const x = (screenX - centerX) / finalScale;
+            const y = (screenY - centerY) / finalScale;
+
+            // Inverse rotation
+            const cosY = Math.cos(yRot);
+            const sinY = Math.sin(yRot);
+            const cosX = Math.cos(xRot);
+            const sinX = Math.sin(xRot);
+
+            // Simplified inverse projection for x-y plane
+            const x2 = x * cosY;
+            const y2 = y / cosX;
+
+            return { x: x2, y: y2 };
         }
 
         function getColor(height) {
             const maxHeight = 50;
             const normalized = Math.min(height / maxHeight, 1);
-            const h = 240 - normalized * 180; // Blue to Red
+            const h = 240 - normalized * 180;
             return `hsl(${h}, 80%, 50%)`;
+        }
+
+        function isNearPoint(mouseX, mouseY, pointX, pointY) {
+            const proj = project(pointX, pointY, loss(pointX, pointY));
+            const distance = Math.sqrt(Math.pow(mouseX - proj.x, 2) + Math.pow(mouseY - proj.y, 2));
+            return distance < 10 * scale;
         }
 
         function draw() {
@@ -103,7 +175,7 @@
                     if (z <= 50) {
                         const proj = project(x, y, z);
                         ctx.beginPath();
-                        ctx.arc(proj.x, proj.y, 2, 0, Math.PI * 2);
+                        ctx.arc(proj.x, proj.y, 2 * scale, 0, Math.PI * 2);
                         ctx.fillStyle = getColor(z);
                         ctx.fill();
                     }
@@ -121,7 +193,7 @@
                 }
             }
             ctx.strokeStyle = 'red';
-            ctx.lineWidth = 2;
+            ctx.lineWidth = 2 * scale;
             ctx.stroke();
 
             // Draw current point
@@ -135,14 +207,14 @@
             ctx.lineTo(proj.x, baseProj.y);
             ctx.setLineDash([5, 5]);
             ctx.strokeStyle = 'black';
-            ctx.lineWidth = 1;
+            ctx.lineWidth = 1 * scale;
             ctx.stroke();
             ctx.setLineDash([]);
             
             // Point
             ctx.beginPath();
-            ctx.arc(proj.x, proj.y, 6, 0, Math.PI * 2);
-            ctx.fillStyle = 'red';
+            ctx.arc(proj.x, proj.y, 6 * scale, 0, Math.PI * 2);
+            ctx.fillStyle = isNearPoint(lastMousePos.x, lastMousePos.y, currentPos.x, currentPos.y) ? '#ff6666' : 'red';
             ctx.fill();
         }
 
@@ -152,24 +224,71 @@
             draw();
         });
 
-        canvas.addEventListener('mousedown', (e) => {
-            isDragging = true;
-            lastMousePos = { x: e.clientX, y: e.clientY };
-        });
+        function updateSliders() {
+            document.getElementById('x').value = currentPos.x;
+            document.getElementById('y').value = currentPos.y;
+            document.getElementById('x-value').textContent = currentPos.x.toFixed(1);
+            document.getElementById('y-value').textContent = currentPos.y.toFixed(1);
+            document.getElementById('value').textContent = `Loss Value: ${loss(currentPos.x, currentPos.y).toFixed(1)}`;
+        }
 
-        canvas.addEventListener('mousemove', (e) => {
-            if (isDragging) {
-                const deltaX = e.clientX - lastMousePos.x;
-                const deltaY = e.clientY - lastMousePos.y;
-                rotation.y += deltaX * 0.5;
-                rotation.x += deltaY * 0.5;
-                lastMousePos = { x: e.clientX, y: e.clientY };
-                draw();
+        canvas.addEventListener('mousedown', (e) => {
+            lastMousePos = { x: e.clientX, y: e.clientY };
+            
+            if (e.button === 2) { // Right click
+                isRotating = true;
+            } else if (e.button === 1 || e.altKey) { // Middle click or Alt+click
+                isDragging = true;
+            } else if (isNearPoint(e.clientX, e.clientY, currentPos.x, currentPos.y)) {
+                isDraggingPoint = true;
+            } else {
+                isDragging = true;
             }
         });
 
-        canvas.addEventListener('mouseup', () => isDragging = false);
-        canvas.addEventListener('mouseleave', () => isDragging = false);
+        canvas.addEventListener('mousemove', (e) => {
+            const mousePos = { x: e.clientX, y: e.clientY };
+
+            if (isDraggingPoint) {
+                const unproj = unproject(mousePos.x, mousePos.y);
+                currentPos.x = Math.max(-5, Math.min(5, unproj.x));
+                currentPos.y = Math.max(-5, Math.min(5, unproj.y));
+                updateSliders();
+                
+                const z = loss(currentPos.x, currentPos.y);
+                path.push({ x: currentPos.x, y: currentPos.y, z: z });
+                if (path.length > 50) path.shift();
+            } else if (isDragging) {
+                translation.x += mousePos.x - lastMousePos.x;
+                translation.y += mousePos.y - lastMousePos.y;
+            } else if (isRotating) {
+                rotation.y += (mousePos.x - lastMousePos.x) * 0.5;
+                rotation.x += (mousePos.y - lastMousePos.y) * 0.5;
+            }
+            
+            lastMousePos = mousePos;
+            draw();
+        });
+
+        canvas.addEventListener('mouseup', () => {
+            isDragging = false;
+            isRotating = false;
+            isDraggingPoint = false;
+        });
+        
+        canvas.addEventListener('mouseleave', () => {
+            isDragging = false;
+            isRotating = false;
+            isDraggingPoint = false;
+        });
+
+        canvas.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            const delta = e.deltaY > 0 ? 0.9 : 1.1;
+            scale *= delta;
+            scale = Math.max(0.1, Math.min(scale, 5));
+            draw();
+        });
 
         function updatePosition() {
             currentPos = { 
@@ -178,9 +297,7 @@
             };
             const z = loss(currentPos.x, currentPos.y);
             
-            document.getElementById('x-value').textContent = currentPos.x.toFixed(1);
-            document.getElementById('y-value').textContent = currentPos.y.toFixed(1);
-            document.getElementById('value').textContent = `Loss Value: ${z.toFixed(1)}`;
+            updateSliders();
             
             path.push({ x: currentPos.x, y: currentPos.y, z: z });
             if (path.length > 50) path.shift();
@@ -190,6 +307,11 @@
 
         document.getElementById('x').addEventListener('input', updatePosition);
         document.getElementById('y').addEventListener('input', updatePosition);
+
+        // Prevent context menu on right click
+        canvas.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+        });
 
         updatePosition();
     </script>
