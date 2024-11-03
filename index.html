@@ -4,95 +4,121 @@
     <title>Neural Network Unit with Morphing Surface</title>
     <style>
         /* Previous styles remain the same */
-        .equation {
+        #position-controls {
             position: fixed;
             top: 20px;
-            right: 20px;
+            right: 50%;
             background: rgba(255, 255, 255, 0.95);
             padding: 15px;
             border-radius: 8px;
             box-shadow: 0 0 10px rgba(0,0,0,0.1);
             z-index: 1000;
-            font-size: 1.2em;
-            line-height: 1.5;
         }
-        .loss-display {
-            margin-top: 10px;
-            font-weight: bold;
-            color: #e44;
+        .button-group {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 5px;
+            margin-bottom: 10px;
         }
-        #instructions {
-            position: fixed;
-            bottom: 20px;
-            left: 20px;
-            background: rgba(255, 255, 255, 0.95);
-            padding: 15px;
-            border-radius: 8px;
-            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        .position-btn {
+            padding: 5px;
+            background: #f0f0f0;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            cursor: pointer;
         }
-        /* Previous styles remain... */
+        .position-btn:hover {
+            background: #e0e0e0;
+        }
+        .center-btn {
+            grid-column: span 3;
+        }
+        /* Rest of previous styles... */
     </style>
 </head>
 <body>
-    <!-- Previous container and controls remain -->
+    <!-- Previous containers and controls remain -->
 
-    <div class="equation">
-        Loss Function:<br>
-        L(θ₁, θ₂) = α(θ₁² + θ₂²)<br>
-        <div class="loss-display" id="current-loss">
-            Current Loss: 0.0
+    <div id="position-controls">
+        <div class="button-group">
+            <button class="position-btn" onclick="moveGraph('upLeft')">↖</button>
+            <button class="position-btn" onclick="moveGraph('up')">↑</button>
+            <button class="position-btn" onclick="moveGraph('upRight')">↗</button>
+            <button class="position-btn" onclick="moveGraph('left')">←</button>
+            <button class="position-btn center-btn" onclick="centerGraph()">Center</button>
+            <button class="position-btn" onclick="moveGraph('right')">→</button>
+            <button class="position-btn" onclick="moveGraph('downLeft')">↙</button>
+            <button class="position-btn" onclick="moveGraph('down')">↓</button>
+            <button class="position-btn" onclick="moveGraph('downRight')">↘</button>
         </div>
     </div>
 
-    <div id="instructions">
-        • Left-click + drag red point to adjust weights<br>
-        • Middle-click/Alt + drag to move entire graph<br>
-        • Right-click + drag to rotate view<br>
-        • Mouse wheel to zoom<br>
-        • Use shape slider to morph surface
-    </div>
-
     <script>
-        // Previous code remains, adding/modifying these parts:
+        // Previous variables remain...
         let translation = { x: 0, y: 0 };
-        let isMovingGraph = false;
+        const MOVE_STEP = 50; // Pixels to move per button click
 
-        function project(x, y, z) {
-            const baseScale = Math.min(width, height) / 12;
-            const finalScale = baseScale * scale;
-            const centerX = width / 2 + translation.x;  // Added translation
-            const centerY = height / 2 + translation.y;  // Added translation
-            
-            const xRot = rotation.x * Math.PI / 180;
-            const yRot = rotation.y * Math.PI / 180;
-            
-            const x1 = x;
-            const y1 = y * Math.cos(xRot) - z * Math.sin(xRot);
-            const z1 = y * Math.sin(xRot) + z * Math.cos(xRot);
-            
-            const x2 = x1 * Math.cos(yRot) + z1 * Math.sin(yRot);
-            
-            return {
-                x: x2 * finalScale + centerX,
-                y: y1 * finalScale + centerY
-            };
+        function moveGraph(direction) {
+            switch(direction) {
+                case 'up':
+                    translation.y -= MOVE_STEP;
+                    break;
+                case 'down':
+                    translation.y += MOVE_STEP;
+                    break;
+                case 'left':
+                    translation.x -= MOVE_STEP;
+                    break;
+                case 'right':
+                    translation.x += MOVE_STEP;
+                    break;
+                case 'upLeft':
+                    translation.x -= MOVE_STEP;
+                    translation.y -= MOVE_STEP;
+                    break;
+                case 'upRight':
+                    translation.x += MOVE_STEP;
+                    translation.y -= MOVE_STEP;
+                    break;
+                case 'downLeft':
+                    translation.x -= MOVE_STEP;
+                    translation.y += MOVE_STEP;
+                    break;
+                case 'downRight':
+                    translation.x += MOVE_STEP;
+                    translation.y += MOVE_STEP;
+                    break;
+            }
+            draw();
         }
 
-        // Modified event listeners
+        function centerGraph() {
+            translation = { x: 0, y: 0 };
+            draw();
+        }
+
+        // Modified event handlers for better graph movement
+        let isDraggingGraph = false;
+        let dragStartPos = { x: 0, y: 0 };
+        let originalTranslation = { x: 0, y: 0 };
+
         surfaceCanvas.addEventListener('mousedown', (e) => {
             lastMousePos = { x: e.clientX, y: e.clientY };
+            dragStartPos = { x: e.clientX, y: e.clientY };
+            originalTranslation = { ...translation };
+
             if (e.button === 2) { // Right click
                 isRotating = true;
             } else if (e.button === 1 || e.altKey) { // Middle click or Alt+click
-                isMovingGraph = true;
-                e.preventDefault(); // Prevent default middle-click behavior
+                e.preventDefault();
+                isDraggingGraph = true;
             } else {
+                // Check if clicking near the point
                 const z = loss(currentPos.x, currentPos.y, morphValue);
                 const proj = project(currentPos.x, currentPos.y, z);
                 const dx = e.clientX - proj.x;
                 const dy = e.clientY - proj.y;
                 
-                // Check if clicking near the point
                 if (Math.sqrt(dx * dx + dy * dy) < 10 * scale) {
                     isDragging = true;
                 }
@@ -100,26 +126,33 @@
         });
 
         surfaceCanvas.addEventListener('mousemove', (e) => {
-            if (isMovingGraph) {
-                translation.x += e.clientX - lastMousePos.x;
-                translation.y += e.clientY - lastMousePos.y;
+            if (isDraggingGraph) {
+                translation.x = originalTranslation.x + (e.clientX - dragStartPos.x);
+                translation.y = originalTranslation.y + (e.clientY - dragStartPos.y);
                 draw();
             } else if (isRotating) {
-                rotation.y += (e.clientX - lastMousePos.x) * 0.5;
-                rotation.x += (e.clientY - lastMousePos.y) * 0.5;
+                const deltaX = e.clientX - lastMousePos.x;
+                const deltaY = e.clientY - lastMousePos.y;
+                rotation.y += deltaX * 0.5;
+                rotation.x += deltaY * 0.5;
                 draw();
             } else if (isDragging) {
-                // Improved point dragging calculation
+                // Improved point dragging with rotation compensation
                 const rect = surfaceCanvas.getBoundingClientRect();
-                const x = (e.clientX - rect.left - translation.x - width/2) / (scale * (Math.min(width, height) / 12));
-                const y = (e.clientY - rect.top - translation.y - height/2) / (scale * (Math.min(width, height) / 12));
+                const centerX = width / 2 + translation.x;
+                const centerY = height / 2 + translation.y;
                 
-                // Adjust for rotation
-                const yRot = rotation.y * Math.PI / 180;
-                const xRot = rotation.x * Math.PI / 180;
+                // Calculate position relative to center
+                const dx = (e.clientX - rect.left - centerX) / (scale * (Math.min(width, height) / 12));
+                const dy = (e.clientY - rect.top - centerY) / (scale * (Math.min(width, height) / 12));
                 
-                currentPos.x = x / Math.cos(yRot);
-                currentPos.y = y / Math.cos(xRot);
+                // Compensate for rotation
+                const cosY = Math.cos(rotation.y * Math.PI / 180);
+                const sinY = Math.sin(rotation.y * Math.PI / 180);
+                const cosX = Math.cos(rotation.x * Math.PI / 180);
+                
+                currentPos.x = (dx * cosY - dy * sinY);
+                currentPos.y = dy / cosX;
                 
                 // Clamp values
                 currentPos.x = Math.max(-5, Math.min(5, currentPos.x));
@@ -134,36 +167,48 @@
         surfaceCanvas.addEventListener('mouseup', () => {
             isDragging = false;
             isRotating = false;
-            isMovingGraph = false;
+            isDraggingGraph = false;
         });
 
         surfaceCanvas.addEventListener('mouseleave', () => {
             isDragging = false;
             isRotating = false;
-            isMovingGraph = false;
+            isDraggingGraph = false;
         });
 
-        // Modified update function
-        function updateSliders() {
-            xSlider.value = currentPos.x;
-            ySlider.value = currentPos.y;
-            document.getElementById('x-value').textContent = currentPos.x.toFixed(1);
-            document.getElementById('y-value').textContent = currentPos.y.toFixed(1);
+        // Prevent text selection during dragging
+        document.addEventListener('selectstart', (e) => {
+            if (isDragging || isRotating || isDraggingGraph) {
+                e.preventDefault();
+            }
+        });
+
+        // Modified project function for better coordinate handling
+        function project(x, y, z) {
+            const baseScale = Math.min(width, height) / 12;
+            const finalScale = baseScale * scale;
+            const centerX = width / 2 + translation.x;
+            const centerY = height / 2 + translation.y;
             
-            const currentLoss = loss(currentPos.x, currentPos.y, morphValue);
-            document.getElementById('value').textContent = `Loss: ${currentLoss.toFixed(1)}`;
-            document.getElementById('current-loss').textContent = 
-                `Current Loss: ${currentLoss.toFixed(3)}`;
+            const xRot = rotation.x * Math.PI / 180;
+            const yRot = rotation.y * Math.PI / 180;
             
-            // Update equation to show actual morphing value
-            const alpha = morphValue.toFixed(2);
-            document.querySelector('.equation').innerHTML = 
-                `Loss Function:<br>` +
-                `L(θ₁, θ₂) = ${alpha}(θ₁² + θ₂²)<br>` +
-                `<div class="loss-display">` +
-                `Current Loss: ${currentLoss.toFixed(3)}<br>` +
-                `θ₁ = ${currentPos.x.toFixed(2)}, θ₂ = ${currentPos.y.toFixed(2)}` +
-                `</div>`;
+            // Improved projection calculations
+            const cosX = Math.cos(xRot);
+            const sinX = Math.sin(xRot);
+            const cosY = Math.cos(yRot);
+            const sinY = Math.sin(yRot);
+            
+            const x1 = x;
+            const y1 = y * cosX - z * sinX;
+            const z1 = y * sinX + z * cosX;
+            
+            const x2 = x1 * cosY + z1 * sinY;
+            
+            return {
+                x: x2 * finalScale + centerX,
+                y: y1 * finalScale + centerY
+            };
         }
 
         // Rest of the code remains the same...
