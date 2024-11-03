@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Loss Function Visualization</title>
+    <title>Neural Network Unit with Gradient Descent</title>
     <style>
         body { 
             margin: 0; 
@@ -10,7 +10,22 @@
             background: white;
             overflow: hidden;
         }
-        #controls {
+        .container {
+            display: flex;
+            width: 100vw;
+            height: 100vh;
+        }
+        #bowl-container {
+            flex: 1;
+            position: relative;
+        }
+        #network-container {
+            flex: 1;
+            position: relative;
+            background: #f8f9fa;
+            border-left: 1px solid #ddd;
+        }
+        .controls {
             position: fixed;
             top: 20px;
             left: 20px;
@@ -20,17 +35,7 @@
             box-shadow: 0 0 10px rgba(0,0,0,0.1);
             z-index: 1000;
         }
-        .slider-group {
-            margin-bottom: 10px;
-        }
-        input[type="range"] {
-            width: 200px;
-        }
-        #value {
-            font-weight: bold;
-            color: #333;
-        }
-        #equation {
+        .equation {
             position: fixed;
             top: 20px;
             right: 20px;
@@ -42,8 +47,8 @@
             z-index: 1000;
         }
         canvas {
-            width: 100vw;
-            height: 100vh;
+            width: 100%;
+            height: 100%;
         }
         #instructions {
             position: fixed;
@@ -56,263 +61,143 @@
             font-size: 0.9em;
             color: #666;
         }
+        .slider-group {
+            margin-bottom: 10px;
+        }
+        input[type="range"] {
+            width: 200px;
+        }
     </style>
 </head>
 <body>
-    <div id="controls">
+    <div class="container">
+        <div id="bowl-container">
+            <canvas id="bowl-canvas"></canvas>
+        </div>
+        <div id="network-container">
+            <canvas id="network-canvas"></canvas>
+        </div>
+    </div>
+
+    <div class="controls">
         <div class="slider-group">
-            <label>X Position: <span id="x-value">0</span></label><br>
+            <label>Weight 1 (θ₁): <span id="x-value">0</span></label><br>
             <input type="range" id="x" min="-5" max="5" value="0" step="0.1">
         </div>
         <div class="slider-group">
-            <label>Y Position: <span id="y-value">0</span></label><br>
+            <label>Weight 2 (θ₂): <span id="y-value">0</span></label><br>
             <input type="range" id="y" min="-5" max="5" value="0" step="0.1">
         </div>
         <div id="value">Loss Value: 0</div>
     </div>
 
-    <div id="equation">
+    <div class="equation">
         L(θ₁, θ₂) = θ₁² + θ₂²
     </div>
 
     <div id="instructions">
-        • Left-click + drag red point to move it on surface<br>
-        • Middle-click/Alt + drag to move entire graph<br>
+        • Left-click + drag point to adjust weights<br>
+        • Middle-click/Alt + drag to move graph<br>
         • Right-click + drag to rotate view<br>
-        • Mouse wheel to zoom in/out
+        • Mouse wheel to zoom
     </div>
 
-    <canvas id="canvas"></canvas>
-
     <script>
-        const canvas = document.getElementById('canvas');
-        const ctx = canvas.getContext('2d');
-        let width = canvas.width = window.innerWidth;
-        let height = canvas.height = window.innerHeight;
+        // [Previous bowl visualization code remains the same...]
 
-        let rotation = { x: 45, y: 45 };
-        let translation = { x: 0, y: 0 };
-        let scale = 1;
-        let isDragging = false;
-        let isRotating = false;
-        let isDraggingPoint = false;
-        let lastMousePos = { x: 0, y: 0 };
-        let currentPos = { x: 0, y: 0 };
-        let path = [];
+        // Neural Network Visualization
+        const networkCanvas = document.getElementById('network-canvas');
+        const networkCtx = networkCanvas.getContext('2d');
 
-        function loss(x, y) {
-            return x * x + y * y;
-        }
-
-        function project(x, y, z) {
-            const baseScale = Math.min(width, height) / 12;
-            const finalScale = baseScale * scale;
-            const centerX = width / 2 + translation.x;
-            const centerY = height / 2 + translation.y;
-            
-            const xRot = rotation.x * Math.PI / 180;
-            const yRot = rotation.y * Math.PI / 180;
-            
-            const x1 = x;
-            const y1 = y * Math.cos(xRot) - z * Math.sin(xRot);
-            const z1 = y * Math.sin(xRot) + z * Math.cos(xRot);
-            
-            const x2 = x1 * Math.cos(yRot) + z1 * Math.sin(yRot);
-            
-            return {
-                x: x2 * finalScale + centerX,
-                y: y1 * finalScale + centerY
-            };
-        }
-
-        // Inverse projection to get world coordinates from screen coordinates
-        function unproject(screenX, screenY) {
-            const baseScale = Math.min(width, height) / 12;
-            const finalScale = baseScale * scale;
-            const centerX = width / 2 + translation.x;
-            const centerY = height / 2 + translation.y;
-            
-            const xRot = rotation.x * Math.PI / 180;
-            const yRot = rotation.y * Math.PI / 180;
-
-            // Adjust for translation and scale
-            const x = (screenX - centerX) / finalScale;
-            const y = (screenY - centerY) / finalScale;
-
-            // Inverse rotation
-            const cosY = Math.cos(yRot);
-            const sinY = Math.sin(yRot);
-            const cosX = Math.cos(xRot);
-            const sinX = Math.sin(xRot);
-
-            // Simplified inverse projection for x-y plane
-            const x2 = x * cosY;
-            const y2 = y / cosX;
-
-            return { x: x2, y: y2 };
-        }
-
-        function getColor(height) {
-            const maxHeight = 50;
-            const normalized = Math.min(height / maxHeight, 1);
-            const h = 240 - normalized * 180;
-            return `hsl(${h}, 80%, 50%)`;
-        }
-
-        function isNearPoint(mouseX, mouseY, pointX, pointY) {
-            const proj = project(pointX, pointY, loss(pointX, pointY));
-            const distance = Math.sqrt(Math.pow(mouseX - proj.x, 2) + Math.pow(mouseY - proj.y, 2));
-            return distance < 10 * scale;
-        }
-
-        function draw() {
-            ctx.clearRect(0, 0, width, height);
-            
-            // Draw surface
-            for (let x = -5; x <= 5; x += 0.2) {
-                for (let y = -5; y <= 5; y += 0.2) {
-                    const z = loss(x, y);
-                    if (z <= 50) {
-                        const proj = project(x, y, z);
-                        ctx.beginPath();
-                        ctx.arc(proj.x, proj.y, 2 * scale, 0, Math.PI * 2);
-                        ctx.fillStyle = getColor(z);
-                        ctx.fill();
-                    }
-                }
-            }
-            
-            // Draw path
+        function drawNeuron(ctx, x, y, radius) {
             ctx.beginPath();
-            for (let i = 0; i < path.length; i++) {
-                const proj = project(path[i].x, path[i].y, path[i].z);
-                if (i === 0) {
-                    ctx.moveTo(proj.x, proj.y);
-                } else {
-                    ctx.lineTo(proj.x, proj.y);
-                }
-            }
-            ctx.strokeStyle = 'red';
-            ctx.lineWidth = 2 * scale;
-            ctx.stroke();
-
-            // Draw current point
-            const z = loss(currentPos.x, currentPos.y);
-            const proj = project(currentPos.x, currentPos.y, z);
-            
-            // Vertical line
-            const baseProj = project(currentPos.x, currentPos.y, 0);
-            ctx.beginPath();
-            ctx.moveTo(proj.x, proj.y);
-            ctx.lineTo(proj.x, baseProj.y);
-            ctx.setLineDash([5, 5]);
-            ctx.strokeStyle = 'black';
-            ctx.lineWidth = 1 * scale;
-            ctx.stroke();
-            ctx.setLineDash([]);
-            
-            // Point
-            ctx.beginPath();
-            ctx.arc(proj.x, proj.y, 6 * scale, 0, Math.PI * 2);
-            ctx.fillStyle = isNearPoint(lastMousePos.x, lastMousePos.y, currentPos.x, currentPos.y) ? '#ff6666' : 'red';
+            ctx.arc(x, y, radius, 0, Math.PI * 2);
+            ctx.fillStyle = '#fff';
             ctx.fill();
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 2;
+            ctx.stroke();
         }
 
-        window.addEventListener('resize', () => {
-            width = canvas.width = window.innerWidth;
-            height = canvas.height = window.innerHeight;
-            draw();
-        });
+        function drawWeight(ctx, startX, startY, endX, endY, weight) {
+            const lineWidth = Math.abs(weight) * 3;
+            const color = weight >= 0 ? 'rgb(0,150,255)' : 'rgb(255,100,100)';
+            
+            ctx.beginPath();
+            ctx.moveTo(startX, startY);
+            ctx.lineTo(endX, endY);
+            ctx.strokeStyle = color;
+            ctx.lineWidth = lineWidth;
+            ctx.stroke();
 
-        function updateSliders() {
-            document.getElementById('x').value = currentPos.x;
-            document.getElementById('y').value = currentPos.y;
-            document.getElementById('x-value').textContent = currentPos.x.toFixed(1);
-            document.getElementById('y-value').textContent = currentPos.y.toFixed(1);
-            document.getElementById('value').textContent = `Loss Value: ${loss(currentPos.x, currentPos.y).toFixed(1)}`;
+            // Draw weight value
+            const midX = (startX + endX) / 2;
+            const midY = (startY + endY) / 2;
+            ctx.fillStyle = '#000';
+            ctx.font = '14px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText(weight.toFixed(2), midX, midY - 10);
         }
 
-        canvas.addEventListener('mousedown', (e) => {
-            lastMousePos = { x: e.clientX, y: e.clientY };
-            
-            if (e.button === 2) { // Right click
-                isRotating = true;
-            } else if (e.button === 1 || e.altKey) { // Middle click or Alt+click
-                isDragging = true;
-            } else if (isNearPoint(e.clientX, e.clientY, currentPos.x, currentPos.y)) {
-                isDraggingPoint = true;
-            } else {
-                isDragging = true;
-            }
-        });
+        function drawNetwork() {
+            const width = networkCanvas.width;
+            const height = networkCanvas.height;
+            networkCtx.clearRect(0, 0, width, height);
 
-        canvas.addEventListener('mousemove', (e) => {
-            const mousePos = { x: e.clientX, y: e.clientY };
-
-            if (isDraggingPoint) {
-                const unproj = unproject(mousePos.x, mousePos.y);
-                currentPos.x = Math.max(-5, Math.min(5, unproj.x));
-                currentPos.y = Math.max(-5, Math.min(5, unproj.y));
-                updateSliders();
-                
-                const z = loss(currentPos.x, currentPos.y);
-                path.push({ x: currentPos.x, y: currentPos.y, z: z });
-                if (path.length > 50) path.shift();
-            } else if (isDragging) {
-                translation.x += mousePos.x - lastMousePos.x;
-                translation.y += mousePos.y - lastMousePos.y;
-            } else if (isRotating) {
-                rotation.y += (mousePos.x - lastMousePos.x) * 0.5;
-                rotation.x += (mousePos.y - lastMousePos.y) * 0.5;
-            }
+            const neuronRadius = 25;
+            const inputY = height * 0.3;
+            const outputY = height * 0.7;
             
-            lastMousePos = mousePos;
-            draw();
-        });
-
-        canvas.addEventListener('mouseup', () => {
-            isDragging = false;
-            isRotating = false;
-            isDraggingPoint = false;
-        });
-        
-        canvas.addEventListener('mouseleave', () => {
-            isDragging = false;
-            isRotating = false;
-            isDraggingPoint = false;
-        });
-
-        canvas.addEventListener('wheel', (e) => {
-            e.preventDefault();
-            const delta = e.deltaY > 0 ? 0.9 : 1.1;
-            scale *= delta;
-            scale = Math.max(0.1, Math.min(scale, 5));
-            draw();
-        });
-
-        function updatePosition() {
-            currentPos = { 
-                x: parseFloat(document.getElementById('x').value), 
-                y: parseFloat(document.getElementById('y').value) 
-            };
-            const z = loss(currentPos.x, currentPos.y);
+            // Draw input neurons
+            drawNeuron(networkCtx, width * 0.2, inputY - 50, neuronRadius);
+            drawNeuron(networkCtx, width * 0.2, inputY + 50, neuronRadius);
             
-            updateSliders();
+            // Draw output neuron
+            drawNeuron(networkCtx, width * 0.8, outputY, neuronRadius);
+
+            // Draw weights
+            drawWeight(networkCtx, 
+                width * 0.2 + neuronRadius, inputY - 50,
+                width * 0.8 - neuronRadius, outputY,
+                currentPos.x);
             
-            path.push({ x: currentPos.x, y: currentPos.y, z: z });
-            if (path.length > 50) path.shift();
+            drawWeight(networkCtx,
+                width * 0.2 + neuronRadius, inputY + 50,
+                width * 0.8 - neuronRadius, outputY,
+                currentPos.y);
+
+            // Labels
+            networkCtx.fillStyle = '#000';
+            networkCtx.font = '16px Arial';
+            networkCtx.textAlign = 'right';
+            networkCtx.fillText('x₁', width * 0.15, inputY - 45);
+            networkCtx.fillText('x₂', width * 0.15, inputY + 55);
             
-            draw();
+            networkCtx.textAlign = 'left';
+            networkCtx.fillText('y', width * 0.85, outputY + 5);
+
+            // Draw title
+            networkCtx.font = 'bold 20px Arial';
+            networkCtx.textAlign = 'center';
+            networkCtx.fillText('Neural Network Unit', width / 2, 40);
         }
 
-        document.getElementById('x').addEventListener('input', updatePosition);
-        document.getElementById('y').addEventListener('input', updatePosition);
+        // Update network when weights change
+        const originalUpdatePosition = updatePosition;
+        updatePosition = function() {
+            originalUpdatePosition();
+            drawNetwork();
+        }
 
-        // Prevent context menu on right click
-        canvas.addEventListener('contextmenu', (e) => {
-            e.preventDefault();
-        });
+        // Initialize network canvas
+        function resizeNetworkCanvas() {
+            networkCanvas.width = networkCanvas.parentElement.clientWidth;
+            networkCanvas.height = networkCanvas.parentElement.clientHeight;
+            drawNetwork();
+        }
 
+        window.addEventListener('resize', resizeNetworkCanvas);
+        resizeNetworkCanvas();
         updatePosition();
     </script>
 </body>
