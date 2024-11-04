@@ -51,6 +51,18 @@
             font-size: 18px;
             font-family: "Times New Roman", serif;
         }
+        .loss-formula {
+            position: fixed;
+            top: 80px;
+            right: 42%;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            z-index: 1000;
+            font-size: 18px;
+            font-family: "Times New Roman", serif;
+        }
         .slider-group {
             margin-bottom: 15px;
         }
@@ -78,15 +90,6 @@
             border-radius: 8px;
             box-shadow: 0 0 10px rgba(0,0,0,0.1);
         }
-        .gradient-controls {
-            position: fixed;
-            bottom: 20px;
-            right: 42%;
-            background: rgba(255, 255, 255, 0.95);
-            padding: 15px;
-            border-radius: 8px;
-            box-shadow: 0 0 10px rgba(0,0,0,0.1);
-        }
     </style>
 </head>
 <body>
@@ -103,6 +106,10 @@
         MSE = (1/n) * Σ(yᵢ - ȳ)²
     </div>
 
+    <div class="loss-formula">
+        L(θ₁, θ₂) = θ₁² + θ₂²
+    </div>
+
     <div class="controls">
         <div class="slider-group">
             <label>Weight 1 (θ₁): <span id="x-value">0.0</span></label>
@@ -117,15 +124,6 @@
             <input type="range" id="morph" min="0" max="1" value="0" step="0.01">
         </div>
         <div id="value">Loss: 0.0</div>
-    </div>
-
-    <div class="gradient-controls">
-        <button id="startGD">Start Gradient Descent</button>
-        <button id="resetGD">Reset</button>
-        <div class="slider-group">
-            <label>Learning Rate: <span id="lr-value">0.1</span></label>
-            <input type="range" id="learning-rate" min="0.01" max="0.5" value="0.1" step="0.01">
-        </div>
     </div>
 
     <div id="instructions">
@@ -153,9 +151,6 @@
         let lastMousePos = { x: 0, y: 0 };
         let path = [];
         let panOffset = { x: 0, y: 0 };
-        let isGradientDescent = false;
-        let learningRate = 0.1;
-        let gradientPath = [];
 
         function resizeCanvases() {
             const container = document.getElementById('bowl-container');
@@ -171,44 +166,8 @@
         }
 
         function loss(x, y, morph) {
+            // Interpolate between flat surface (z = 0) and bowl (z = x² + y²)
             return (x * x + y * y) * morph;
-        }
-
-        // Calculate gradients for x and y
-        function gradients(x, y, morph) {
-            // Partial derivatives of the loss function
-            const dx = 2 * x * morph;
-            const dy = 2 * y * morph;
-            return { dx, dy };
-        }
-
-        // Gradient descent step
-        function gradientDescentStep() {
-            if (!isGradientDescent) return;
-
-            const grads = gradients(currentPos.x, currentPos.y, morphValue);
-            
-            // Update positions using gradient descent
-            currentPos.x -= learningRate * grads.dx;
-            currentPos.y -= learningRate * grads.dy;
-
-            // Clamp values to prevent going out of bounds
-            currentPos.x = Math.max(-5, Math.min(5, currentPos.x));
-            currentPos.y = Math.max(-5, Math.min(5, currentPos.y));
-
-            // Store path for visualization
-            gradientPath.push({...currentPos});
-            if (gradientPath.length > 100) gradientPath.shift();
-
-            updateSliders();
-            draw();
-
-            // Continue animation if not at minimum
-            if (Math.abs(grads.dx) > 0.01 || Math.abs(grads.dy) > 0.01) {
-                requestAnimationFrame(gradientDescentStep);
-            } else {
-                isGradientDescent = false;
-            }
         }
 
         function project(x, y, z) {
@@ -233,9 +192,10 @@
         }
 
         function getColor(height, x, y) {
-            const r = Math.floor(((x + 5) / 10) * 255);
-            const g = Math.floor(((y + 5) / 10) * 255);
-            const b = Math.floor((height / 50) * 255);
+            // RGB gradient based on position and height
+            const r = Math.floor(((x + 5) / 10) * 255);  // Red varies with x
+            const g = Math.floor(((y + 5) / 10) * 255);  // Green varies with y
+            const b = Math.floor((height / 50) * 255);   // Blue varies with height
             return `rgb(${r}, ${g}, ${b})`;
         }
 
@@ -252,26 +212,6 @@
                     ctx.fillStyle = getColor(z, x, y);
                     ctx.fill();
                 }
-            }
-
-            // Draw gradient descent path
-            if (gradientPath.length > 1) {
-                ctx.beginPath();
-                const firstPoint = gradientPath[0];
-                const firstZ = loss(firstPoint.x, firstPoint.y, morphValue);
-                const firstProj = project(firstPoint.x, firstPoint.y, firstZ);
-                ctx.moveTo(firstProj.x, firstProj.y);
-
-                for (let i = 1; i < gradientPath.length; i++) {
-                    const point = gradientPath[i];
-                    const z = loss(point.x, point.y, morphValue);
-                    const proj = project(point.x, point.y, z);
-                    ctx.lineTo(proj.x, proj.y);
-                }
-
-                ctx.strokeStyle = 'rgba(255, 255, 0, 0.5)';
-                ctx.lineWidth = 2;
-                ctx.stroke();
             }
             
             // Draw current point
@@ -381,9 +321,6 @@
                 
                 if (isRotating) {
                     rotation.y += deltaX * 0.5;
-                    rotation.x += deltaY * 0.
-                    if (isRotating) {
-                    rotation.y += deltaX * 0.5;
                     rotation.x += deltaY * 0.5;
                 } else if (isPanning) {
                     panOffset.x += deltaX;
@@ -422,9 +359,6 @@
         const xSlider = document.getElementById('x');
         const ySlider = document.getElementById('y');
         const morphSlider = document.getElementById('morph');
-        const learningRateSlider = document.getElementById('learning-rate');
-        const startGDButton = document.getElementById('startGD');
-        const resetGDButton = document.getElementById('resetGD');
 
         function updateSliders() {
             xSlider.value = currentPos.x;
@@ -450,26 +384,8 @@
         morphSlider.addEventListener('input', (e) => {
             morphValue = parseFloat(e.target.value);
             document.getElementById('morph-value').textContent = 
-                morphValue === 0 ? 'Flat' : morphValue === 1 ? 'Bowl' : 'Morphing';
-            draw();
-        });
-
-        learningRateSlider.addEventListener('input', (e) => {
-            learningRate = parseFloat(e.target.value);
-            document.getElementById('lr-value').textContent = learningRate.toFixed(2);
-        });
-
-        startGDButton.addEventListener('click', () => {
-            if (!isGradientDescent) {
-                isGradientDescent = true;
-                gradientPath = [{...currentPos}];
-                gradientDescentStep();
-            }
-        });
-
-        resetGDButton.addEventListener('click', () => {
-            isGradientDescent = false;
-            gradientPath = [];
+                morphValue === 0 ? 'Flat' : morphValue
+            morphValue === 0 ? 'Flat' : morphValue === 1 ? 'Bowl' : 'Morphing';
             draw();
         });
 
