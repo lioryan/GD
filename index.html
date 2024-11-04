@@ -51,19 +51,6 @@
             font-size: 18px;
             font-family: "Times New Roman", serif;
         }
-        .gradient-formula {
-            position: fixed;
-            top: 100px;
-            right: 42%;
-            background: rgba(255, 255, 255, 0.95);
-            padding: 15px;
-            border-radius: 8px;
-            box-shadow: 0 0 10px rgba(0,0,0,0.1);
-            z-index: 1000;
-            font-size: 16px;
-            font-family: "Times New Roman", serif;
-            line-height: 1.5;
-        }
         .slider-group {
             margin-bottom: 15px;
         }
@@ -91,6 +78,15 @@
             border-radius: 8px;
             box-shadow: 0 0 10px rgba(0,0,0,0.1);
         }
+        .gradient-controls {
+            position: fixed;
+            bottom: 20px;
+            right: 42%;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
     </style>
 </head>
 <body>
@@ -105,12 +101,6 @@
 
     <div class="formula">
         MSE = (1/n) * Σ(yᵢ - ȳ)²
-    </div>
-
-    <div class="gradient-formula">
-        ∇L = [∂L/∂θ₁, ∂L/∂θ₂]<br>
-        = [<span id="grad-x">0</span>, <span id="grad-y">0</span>]<br>
-        θ = θ - α∇L
     </div>
 
     <div class="controls">
@@ -129,6 +119,15 @@
         <div id="value">Loss: 0.0</div>
     </div>
 
+    <div class="gradient-controls">
+        <button id="startGD">Start Gradient Descent</button>
+        <button id="resetGD">Reset</button>
+        <div class="slider-group">
+            <label>Learning Rate: <span id="lr-value">0.1</span></label>
+            <input type="range" id="learning-rate" min="0.01" max="0.5" value="0.1" step="0.01">
+        </div>
+    </div>
+
     <div id="instructions">
         • Alt + Left click to adjust weights<br>
         • Right-click + drag to rotate view<br>
@@ -138,8 +137,6 @@
     </div>
 
     <script>
-        // Keep all existing code here unchanged
-
         const surfaceCanvas = document.getElementById('surface-canvas');
         const networkCanvas = document.getElementById('network-canvas');
         const ctx = surfaceCanvas.getContext('2d');
@@ -156,16 +153,9 @@
         let lastMousePos = { x: 0, y: 0 };
         let path = [];
         let panOffset = { x: 0, y: 0 };
-
-        // Add gradient calculation function
-        function calculateGradient(x, y) {
-            // For the bowl shape z = (x² + y²) * morph
-            // The gradient is [2x*morph, 2y*morph]
-            return {
-                x: 2 * x * morphValue,
-                y: 2 * y * morphValue
-            };
-        }
+        let isGradientDescent = false;
+        let learningRate = 0.1;
+        let gradientPath = [];
 
         function resizeCanvases() {
             const container = document.getElementById('bowl-container');
@@ -181,8 +171,44 @@
         }
 
         function loss(x, y, morph) {
-            // Interpolate between flat surface (z = 0) and bowl (z = x² + y²)
             return (x * x + y * y) * morph;
+        }
+
+        // Calculate gradients for x and y
+        function gradients(x, y, morph) {
+            // Partial derivatives of the loss function
+            const dx = 2 * x * morph;
+            const dy = 2 * y * morph;
+            return { dx, dy };
+        }
+
+        // Gradient descent step
+        function gradientDescentStep() {
+            if (!isGradientDescent) return;
+
+            const grads = gradients(currentPos.x, currentPos.y, morphValue);
+            
+            // Update positions using gradient descent
+            currentPos.x -= learningRate * grads.dx;
+            currentPos.y -= learningRate * grads.dy;
+
+            // Clamp values to prevent going out of bounds
+            currentPos.x = Math.max(-5, Math.min(5, currentPos.x));
+            currentPos.y = Math.max(-5, Math.min(5, currentPos.y));
+
+            // Store path for visualization
+            gradientPath.push({...currentPos});
+            if (gradientPath.length > 100) gradientPath.shift();
+
+            updateSliders();
+            draw();
+
+            // Continue animation if not at minimum
+            if (Math.abs(grads.dx) > 0.01 || Math.abs(grads.dy) > 0.01) {
+                requestAnimationFrame(gradientDescentStep);
+            } else {
+                isGradientDescent = false;
+            }
         }
 
         function project(x, y, z) {
@@ -207,17 +233,10 @@
         }
 
         function getColor(height, x, y) {
-            // RGB gradient based on position and height
-            const r = Math.floor(((x + 5) / 10) * 255);  // Red varies with x
-            const g = Math.floor(((y + 5) / 10) * 255);  // Green varies with y
-            const b = Math.floor((height / 50) * 255);   // Blue varies with height
+            const r = Math.floor(((x + 5) / 10) * 255);
+            const g = Math.floor(((y + 5) / 10) * 255);
+            const b = Math.floor((height / 50) * 255);
             return `rgb(${r}, ${g}, ${b})`;
-        }
-
-        function updateGradientDisplay() {
-            const gradient = calculateGradient(currentPos.x, currentPos.y);
-            document.getElementById('grad-x').textContent = gradient.x.toFixed(3);
-            document.getElementById('grad-y').textContent = gradient.y.toFixed(3);
         }
 
         function drawSurface() {
@@ -233,6 +252,26 @@
                     ctx.fillStyle = getColor(z, x, y);
                     ctx.fill();
                 }
+            }
+
+            // Draw gradient descent path
+            if (gradientPath.length > 1) {
+                ctx.beginPath();
+                const firstPoint = gradientPath[0];
+                const firstZ = loss(firstPoint.x, firstPoint.y, morphValue);
+                const firstProj = project(firstPoint.x, firstPoint.y, firstZ);
+                ctx.moveTo(firstProj.x, firstProj.y);
+
+                for (let i = 1; i < gradientPath.length; i++) {
+                    const point = gradientPath[i];
+                    const z = loss(point.x, point.y, morphValue);
+                    const proj = project(point.x, point.y, z);
+                    ctx.lineTo(proj.x, proj.y);
+                }
+
+                ctx.strokeStyle = 'rgba(255, 255, 0, 0.5)';
+                ctx.lineWidth = 2;
+                ctx.stroke();
             }
             
             // Draw current point
@@ -254,13 +293,139 @@
             ctx.arc(proj.x, proj.y, 6 * scale, 0, Math.PI * 2);
             ctx.fillStyle = 'red';
             ctx.fill();
-
-            // Update gradient display
-            updateGradientDisplay();
         }
 
-        // Keep all other existing functions and event listeners unchanged...
-        
+        function drawNetwork() {
+            const width = networkCanvas.width;
+            const height = networkCanvas.height;
+            netCtx.clearRect(0, 0, width, height);
+
+            // Draw neurons
+            const neuronRadius = 20;
+            const inputY1 = height * 0.3;
+            const inputY2 = height * 0.7;
+            const outputY = height * 0.5;
+            
+            function drawNeuron(x, y, label) {
+                netCtx.beginPath();
+                netCtx.arc(x, y, neuronRadius, 0, Math.PI * 2);
+                netCtx.fillStyle = '#fff';
+                netCtx.fill();
+                netCtx.strokeStyle = '#000';
+                netCtx.lineWidth = 2;
+                netCtx.stroke();
+                
+                netCtx.fillStyle = '#000';
+                netCtx.font = '16px Arial';
+                netCtx.textAlign = 'center';
+                netCtx.textBaseline = 'middle';
+                netCtx.fillText(label, x, y);
+            }
+
+            function drawConnection(x1, y1, x2, y2, weight) {
+                const width = Math.abs(weight) * 2;
+                netCtx.beginPath();
+                netCtx.moveTo(x1, y1);
+                netCtx.lineTo(x2, y2);
+                netCtx.strokeStyle = weight >= 0 ? 'blue' : 'red';
+                netCtx.lineWidth = width;
+                netCtx.stroke();
+
+                const midX = (x1 + x2) / 2;
+                const midY = (y1 + y2) / 2;
+                netCtx.fillStyle = '#000';
+                netCtx.font = '14px Arial';
+                netCtx.textAlign = 'center';
+                netCtx.fillText(weight.toFixed(2), midX, midY);
+            }
+
+            const input1X = width * 0.2;
+            const input2X = width * 0.2;
+            const outputX = width * 0.8;
+
+            drawConnection(input1X + neuronRadius, inputY1, outputX - neuronRadius, outputY, currentPos.x);
+            drawConnection(input2X + neuronRadius, inputY2, outputX - neuronRadius, outputY, currentPos.y);
+
+            drawNeuron(input1X, inputY1, "x₁");
+            drawNeuron(input2X, inputY2, "x₂");
+            drawNeuron(outputX, outputY, "y");
+
+            // Title
+            netCtx.font = 'bold 18px Arial';
+            netCtx.fillStyle = '#000';
+            netCtx.textAlign = 'center';
+            netCtx.fillText('Neural Network Unit', width/2, 30);
+        }
+
+        function draw() {
+            drawSurface();
+            drawNetwork();
+        }
+
+        // Event Listeners
+        surfaceCanvas.addEventListener('mousedown', (e) => {
+            lastMousePos = { x: e.clientX, y: e.clientY };
+            if (e.button === 2) {
+                isRotating = true;
+            } else if (e.altKey) {
+                isDragging = true;
+            } else {
+                isPanning = true;
+            }
+        });
+
+        surfaceCanvas.addEventListener('mousemove', (e) => {
+            if (isDragging || isRotating || isPanning) {
+                const deltaX = e.clientX - lastMousePos.x;
+                const deltaY = e.clientY - lastMousePos.y;
+                
+                if (isRotating) {
+                    rotation.y += deltaX * 0.5;
+                    rotation.x += deltaY * 0.
+                    if (isRotating) {
+                    rotation.y += deltaX * 0.5;
+                    rotation.x += deltaY * 0.5;
+                } else if (isPanning) {
+                    panOffset.x += deltaX;
+                    panOffset.y += deltaY;
+                } else {
+                    currentPos.x += deltaX * 0.01;
+                    currentPos.y -= deltaY * 0.01;
+                    currentPos.x = Math.max(-5, Math.min(5, currentPos.x));
+                    currentPos.y = Math.max(-5, Math.min(5, currentPos.y));
+                    updateSliders();
+                }
+                
+                lastMousePos = { x: e.clientX, y: e.clientY };
+                draw();
+            }
+        });
+
+        surfaceCanvas.addEventListener('mouseup', () => {
+            isDragging = false;
+            isRotating = false;
+            isPanning = false;
+        });
+
+        surfaceCanvas.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            scale *= e.deltaY > 0 ? 0.9 : 1.1;
+            scale = Math.max(0.1, Math.min(scale, 5));
+            draw();
+        });
+
+        surfaceCanvas.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+        });
+
+        // Slider controls
+        const xSlider = document.getElementById('x');
+        const ySlider = document.getElementById('y');
+        const morphSlider = document.getElementById('morph');
+        const learningRateSlider = document.getElementById('learning-rate');
+        const startGDButton = document.getElementById('startGD');
+        const resetGDButton = document.getElementById('resetGD');
+
         function updateSliders() {
             xSlider.value = currentPos.x;
             ySlider.value = currentPos.y;
@@ -268,11 +433,50 @@
             document.getElementById('y-value').textContent = currentPos.y.toFixed(1);
             document.getElementById('value').textContent = 
                 `Loss: ${loss(currentPos.x, currentPos.y, morphValue).toFixed(1)}`;
-            updateGradientDisplay();
         }
 
-        // Keep all remaining code unchanged...
+        xSlider.addEventListener('input', (e) => {
+            currentPos.x = parseFloat(e.target.value);
+            updateSliders();
+            draw();
+        });
 
+        ySlider.addEventListener('input', (e) => {
+            currentPos.y = parseFloat(e.target.value);
+            updateSliders();
+            draw();
+        });
+
+        morphSlider.addEventListener('input', (e) => {
+            morphValue = parseFloat(e.target.value);
+            document.getElementById('morph-value').textContent = 
+                morphValue === 0 ? 'Flat' : morphValue === 1 ? 'Bowl' : 'Morphing';
+            draw();
+        });
+
+        learningRateSlider.addEventListener('input', (e) => {
+            learningRate = parseFloat(e.target.value);
+            document.getElementById('lr-value').textContent = learningRate.toFixed(2);
+        });
+
+        startGDButton.addEventListener('click', () => {
+            if (!isGradientDescent) {
+                isGradientDescent = true;
+                gradientPath = [{...currentPos}];
+                gradientDescentStep();
+            }
+        });
+
+        resetGDButton.addEventListener('click', () => {
+            isGradientDescent = false;
+            gradientPath = [];
+            draw();
+        });
+
+        // Initialize
+        window.addEventListener('resize', resizeCanvases);
+        resizeCanvases();
+        updateSliders();
     </script>
 </body>
 </html>
